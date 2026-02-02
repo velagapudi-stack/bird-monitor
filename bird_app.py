@@ -10,33 +10,19 @@ FILE_NAME = 'bird_data.csv'
 # Based on Alligator Creek, Sarasota County, FL
 LOCATION_COORDS = {
     "Alligator Creek": [27.042, -82.430],
-    # Add other locations here if you expand monitoring sites in the future
+    # Add other locations here if you expand monitoring sites
     # "Lemon Bay": [26.960, -82.353],
 }
 
-# Corrected Species List (AOU Codes and Common Names)
+# Corrected Species List (AOU Codes)
 SPECIES_LIST = [
-    "Palm Warbler (PAWA)", 
-    "Red-bellied Woodpecker (RBWO)", 
-    "Great Egret (GREG)", 
-    "Blue Jay (BLJA)", 
-    "Carolina Wren (CAWR)", 
-    "Fish Crow (FICR)", 
-    "Northern Cardinal (NOCA)", 
-    "Tricolored Heron (TRHE)", 
-    "Red-shouldered Hawk (RSHA)", 
-    "Yellow-rumped Warbler (YRWA)", 
-    "Wood Stork (WOST)", 
-    "White Ibis (WHIB)", 
-    "Eastern Phoebe (EAPH)", 
-    "Little Blue Heron (LBHE)", 
-    "Mourning Dove (MODO)", 
-    "Blue-gray Gnatcatcher (BGGN)", 
-    "Gray Catbird (GRCA)", 
-    "Common Grackle (COGR)", 
-    "Tufted Titmouse (TUTI)", 
-    "Downy Woodpecker (DOWO)", 
-    "Sandhill Crane (SACR)"
+    "Palm Warbler (PAWA)", "Red-bellied Woodpecker (RBWO)", "Great Egret (GREG)", 
+    "Blue Jay (BLJA)", "Carolina Wren (CAWR)", "Fish Crow (FICR)", 
+    "Northern Cardinal (NOCA)", "Tricolored Heron (TRHE)", "Red-shouldered Hawk (RSHA)", 
+    "Yellow-rumped Warbler (YRWA)", "Wood Stork (WOST)", "White Ibis (WHIB)", 
+    "Eastern Phoebe (EAPH)", "Little Blue Heron (LBHE)", "Mourning Dove (MODO)", 
+    "Blue-gray Gnatcatcher (BGGN)", "Gray Catbird (GRCA)", "Common Grackle (COGR)", 
+    "Tufted Titmouse (TUTI)", "Downy Woodpecker (DOWO)", "Sandhill Crane (SACR)"
 ]
 
 def load_data():
@@ -68,8 +54,7 @@ with tab1:
         c1, c2, c3 = st.columns(3)
         with c1:
             entry_date = st.date_input("Date", value=date.today())
-            
-            # Location Logic: Dropdown with known locations + "Other" option
+            # Dropdown with known locations, but allow custom entry
             loc_options = list(LOCATION_COORDS.keys()) + ["Other"]
             loc_selection = st.selectbox("Location ID", loc_options)
             
@@ -162,4 +147,58 @@ with tab2:
         with col_f1:
             loc_filter = st.multiselect("Filter by Location", options=df["Location"].unique())
         with col_f2:
-            dates = pd.to_datetime(df["Date"]).dt.date.
+            dates = pd.to_datetime(df["Date"]).dt.date.unique()
+            date_filter = st.multiselect("Filter by Date", options=dates)
+            
+        filtered_df = df.copy()
+        if loc_filter:
+            filtered_df = filtered_df[filtered_df["Location"].isin(loc_filter)]
+        if date_filter:
+            filtered_df["DateObj"] = pd.to_datetime(filtered_df["Date"]).dt.date
+            filtered_df = filtered_df[filtered_df["DateObj"].isin(date_filter)]
+            filtered_df = filtered_df.drop(columns=["DateObj"])
+
+        # --- MAP FEATURE ---
+        st.subheader("📍 Location Map")
+        
+        # Create a dataframe specifically for the map
+        # 1. Get unique locations from the filtered data
+        unique_locs = filtered_df["Location"].unique()
+        
+        # 2. Build map data
+        map_data = []
+        for loc in unique_locs:
+            if loc in LOCATION_COORDS:
+                map_data.append({
+                    "Location": loc,
+                    "lat": LOCATION_COORDS[loc][0],
+                    "lon": LOCATION_COORDS[loc][1],
+                    "Records": len(filtered_df[filtered_df["Location"] == loc])
+                })
+        
+        map_df = pd.DataFrame(map_data)
+        
+        if not map_df.empty:
+            st.map(map_df, size=20, zoom=10)
+            st.caption("Showing known monitoring locations based on your selection.")
+        else:
+            st.info("No location coordinates found for the selected data. (Only 'Alligator Creek' has coordinates configured).")
+
+        # --- STATS & TABLE ---
+        st.divider()
+        st.subheader("Detailed Records")
+        st.dataframe(filtered_df, use_container_width=True)
+        
+        total_birds = filtered_df["Count_le_50m"].sum() + filtered_df["Count_gt_50m"].sum() + filtered_df["Flythrough"].sum()
+        st.metric("Total Birds Counted (Selection)", int(total_birds))
+        
+        if not filtered_df.empty:
+            st.write("### Counts by Species")
+            filtered_df["Total"] = filtered_df["Count_le_50m"] + filtered_df["Count_gt_50m"] + filtered_df["Flythrough"]
+            species_summary = filtered_df.groupby("Species")["Total"].sum().sort_values(ascending=False)
+            st.bar_chart(species_summary)
+            
+        csv = filtered_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Data as CSV", csv, "bird_data.csv", "text/csv")
+    else:
+        st.info("No data recorded yet.")
